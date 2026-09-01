@@ -57,6 +57,9 @@ export function fromStroops(stroops: bigint, decimals = 7): string {
  * @param decimals       Token decimal places (default 7 for Stellar assets)
  */
 export function calculateRate(depositAmount: string, durationSecs: number, decimals = 7): bigint {
+  if (!Number.isInteger(durationSecs) || durationSecs <= 0) {
+    throw new Error(`durationSecs must be a positive integer, got ${durationSecs}`);
+  }
   const stroops = toStroops(depositAmount, decimals);
   const divisor = BigInt(durationSecs);
   if (divisor === 0n) return 0n;
@@ -80,6 +83,9 @@ export function calculateYield(
   durationSecs = 31_536_000,
   decimals = 7,
 ): string {
+  if (!Number.isInteger(durationSecs) || durationSecs <= 0) {
+    throw new Error(`durationSecs must be a positive integer, got ${durationSecs}`);
+  }
   const totalStroops = ratePerSecond * BigInt(durationSecs);
   return fromStroops(totalStroops, decimals);
 }

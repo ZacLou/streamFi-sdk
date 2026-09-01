@@ -1,5 +1,5 @@
 import { StrKey, Address, nativeToScVal } from '@stellar/stellar-sdk';
-import { bigintSafeStringify } from './utils.js';
+import { bigintSafeStringify, toStroops } from './utils.js';
 import { boolToScVal } from './soroban.js';
 import {
   buildBatchTransactions,
@@ -574,11 +574,24 @@ function validatePayload(streams: unknown): string[] {
         }
       }
 
-      // Validate amount field — must be a positive finite number (where present)
+      // Validate amount field — must be a bigint or a decimal string parseable by toStroops
       if (obj.amount !== undefined && obj.amount !== null) {
-        const amount = Number(obj.amount);
-        if (!Number.isFinite(amount) || amount <= 0) {
-          errors.push(`Batch item at index ${i}: amount must be a positive finite number, got "${obj.amount}"`);
+        const amt = obj.amount;
+        if (typeof amt === 'bigint') {
+          if (amt <= 0n) {
+            errors.push(`Batch item at index ${i}: amount must be a positive bigint, got ${amt.toString()}`);
+          }
+        } else if (typeof amt === 'string') {
+          try {
+            const stroops = toStroops(amt);
+            if (stroops <= 0n) {
+              errors.push(`Batch item at index ${i}: amount must be a positive value, got "${amt}"`);
+            }
+          } catch {
+            errors.push(`Batch item at index ${i}: amount must be a valid decimal string (e.g. "1000" or "1.5"), got "${amt}"`);
+          }
+        } else {
+          errors.push(`Batch item at index ${i}: amount must be a bigint or decimal string, got ${typeof amt}`);
         }
       }
     }

@@ -6,7 +6,7 @@ import { nativeToScVal, xdr, Address } from '@stellar/stellar-sdk';
 import type { ConduitConfig } from './types/index.js';
 import type { WalletAdapter } from './adapters/types.js';
 import { KeypairWalletAdapter } from './adapters/keypair.js';
-import { ZERO_ADDR, DEFAULT_LIST_LIMIT, clampListLimit } from './constants.js';
+import { ZERO_ADDR, DEFAULT_LIST_LIMIT, clampListLimit, clampOffset } from './constants.js';
 import {
   buildContractCallTx,
   simulateReadOnly,
@@ -197,7 +197,7 @@ export class FactoryModule {
       this.factoryId, 'streams_by_sender',
       [
         new Address(address).toScVal(),
-        nativeToScVal(offset, { type: 'u32' }),
+        nativeToScVal(clampOffset(offset), { type: 'u32' }),
         nativeToScVal(clampListLimit(limit), { type: 'u32' }),
       ],
     );
@@ -218,7 +218,7 @@ export class FactoryModule {
       this.factoryId, 'streams_by_recipient',
       [
         new Address(address).toScVal(),
-        nativeToScVal(offset, { type: 'u32' }),
+        nativeToScVal(clampOffset(offset), { type: 'u32' }),
         nativeToScVal(clampListLimit(limit), { type: 'u32' }),
       ],
     );

@@ -52,6 +52,16 @@ export function clampListLimit(limit: number): number {
 }
 
 /**
+ * Clamp a caller-supplied pagination `offset` to a non-negative integer
+ * within the valid u32 range (`[0, 2^32 - 1]`). Non-finite or negative
+ * input returns 0 rather than producing an invalid u32 conversion.
+ */
+export function clampOffset(offset: number): number {
+  if (!Number.isFinite(offset)) return 0;
+  return Math.min(Math.max(Math.trunc(offset), 0), 0xFFFFFFFF);
+}
+
+/**
  * Bit-flags packed into the on-chain `StreamInfo.flags` (`u32`). `paused`,
  * `cancelled` and `clawback_enabled` are NOT individual struct fields -- they
  * live in these bits.
