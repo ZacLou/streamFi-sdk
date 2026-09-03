@@ -14,6 +14,7 @@ vi.mock('../soroban.js', () => ({
   simulateReadOnly:    mockSimulate,
   scValToU64: (v: { u64: () => { toString: () => string } }) =>
     BigInt(v.u64().toString()),
+  scValToU32: (v: { u32: () => number }) => v.u32(),
   scValToI128: (v: { i128: () => { hi: () => { toString: () => string }; lo: () => { toString: () => string } } }) => {
     const i128 = v.i128();
     return (BigInt(i128.hi().toString()) << 64n) | BigInt(i128.lo().toString());

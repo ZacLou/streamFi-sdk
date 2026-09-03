@@ -216,7 +216,11 @@ export class StreamBuilder {
       token: this._token,
       sender: this._sender,
       recipient: this._recipient,
-      amount: typeof this._amount === 'bigint' ? this._amount.toString() : this._amount,
+      // Coerce to string regardless of input type: build()'s return type
+      // promises `amount: string`, and ConduitBatcher's payload validation
+      // rejects a raw `number` (a float-precision hazard for token amounts).
+      // Same rationale as `ratePerSecond` below (see #459).
+      amount: typeof this._amount === 'bigint' ? this._amount.toString() : String(this._amount),
     };
     if (this._ratePerSecond !== undefined && this._ratePerSecond !== null) {
       // build()'s return type promises `ratePerSecond?: string`, but
@@ -236,7 +240,7 @@ export class StreamBuilder {
       token: string;
       sender: string;
       recipient: string;
-      amount: number;
+      amount: string;
       ratePerSecond?: string;
       startTime?: number;
       endTime?: number;

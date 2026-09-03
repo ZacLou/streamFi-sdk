@@ -312,7 +312,9 @@ export class WebSocketRelayer {
         this.reconnectDelayMs * 2 ** (this.reconnectAttempts - 1),
       ) * (0.5 + Math.random() * 0.5);
       await new Promise((r) => setTimeout(r, delay));
-      if (this.isDestroyed) return;
+      // disconnect()/destroy() can land during the backoff delay; bail before
+      // opening another socket if reconnection was cancelled meanwhile (#619).
+      if (this.isDestroyed || !this.reconnectEnabled) return;
 
       await this.establishConnection();
     } catch {
