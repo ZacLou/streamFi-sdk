@@ -6,6 +6,8 @@ export type {
   BatchExecuteAsyncOptions,
   BatchResult,
 } from './builder.js';
+export { withRetry, isTransientRpcError } from './with-retry.js';
+export type { WithRetryOptions } from './with-retry.js';
 export {
   buildBatchTransactions,
   buildBatchTransactionsSync,
