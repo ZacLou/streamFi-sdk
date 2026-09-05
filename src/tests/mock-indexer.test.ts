@@ -1,9 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { createMockIndexer } from '../mock-indexer.js'
-
-afterEach(() => {
-  // Ensure fetch is restored even if cleanup wasn't called
-})
 
 describe('createMockIndexer (#607)', () => {
   it('returns canned data for a matching query name', async () => {
@@ -40,14 +36,14 @@ describe('createMockIndexer (#607)', () => {
     const indexer = createMockIndexer({
       responses: {
         FailingQuery: {
-          errors: [{ message: 'Field "nonexistent" not found' }],
+          errors: [{ message: 'Field nonexistent not found' }],
         },
       },
     })
 
     await expect(
       indexer.query({ query: 'query FailingQuery { nonexistent }' }),
-    ).rejects.toThrow(/Field.*not found/)
+    ).rejects.toThrow(/Field nonexistent not found/)
     indexer.cleanup()
   })
 
@@ -65,14 +61,11 @@ describe('createMockIndexer (#607)', () => {
     indexer.cleanup()
   })
 
-  it('restores global fetch on cleanup', () => {
-    const originalFetch = globalThis.fetch
-    const indexer = createMockIndexer({ responses: {} })
+  it('returns null when no responses configured', async () => {
+    const indexer = createMockIndexer({})
 
-    expect(globalThis.fetch).not.toBe(originalFetch)
-
+    const result = await indexer.query({ query: 'query Test { x }' })
+    expect(result).toBeNull()
     indexer.cleanup()
-
-    expect(globalThis.fetch).toBe(originalFetch)
   })
 })
