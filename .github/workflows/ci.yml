@@ -105,12 +105,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - run: npm ci
       - run: npm run build
       - run: |
-          npm install --no-save size-limit @size-limit/preset-big-lib
-          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.devDependencies=p.devDependencies||{};p.devDependencies['size-limit']='^11.2.0';p.devDependencies['@size-limit/preset-big-lib']='^11.2.0';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          npm install --no-save size-limit@11.2.0 @size-limit/file@11.2.0
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.devDependencies=p.devDependencies||{};p.devDependencies['size-limit']='11.2.0';p.devDependencies['@size-limit/file']='11.2.0';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
           npx size-limit
