@@ -426,8 +426,7 @@ describe('GraphQLIndexer.subscribe() — WebSocket transport', () => {
   });
 
 
-
-// ── SSE / fetch fallback transport (used when no WebSocket is available) ──
+});
 
 function sseBodyFromLines(lines: string[]): { getReader: () => any } {
   const encoder = new TextEncoder();
