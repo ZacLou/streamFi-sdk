@@ -39,9 +39,11 @@ describe('GraphQLIndexer.subscribe() — WebSocket transport', () => {
       return mockWs;
     });
     (globalThis as any).WebSocket = wsCtor;
+    vi.spyOn(Math, 'random').mockReturnValue(0);
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
     delete (globalThis as any).WebSocket;
   });
@@ -237,6 +239,7 @@ describe('GraphQLIndexer.subscribe() — WebSocket transport', () => {
     });
 
     indexer.cleanup();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -265,6 +268,7 @@ describe('GraphQLIndexer.subscribe() — WebSocket transport', () => {
     expect(sockets).toHaveLength(1);
     expect(indexer.getSubscriptionCount()).toBe(0);
     indexer.cleanup();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -292,6 +296,7 @@ describe('GraphQLIndexer.subscribe() — WebSocket transport', () => {
 
     expect(sockets).toHaveLength(1);
     expect(indexer.getSubscriptionCount()).toBe(0);
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -327,6 +332,7 @@ describe('GraphQLIndexer.subscribe() — WebSocket transport', () => {
       expect.objectContaining({ message: expect.stringMatching(/exhausted/i) }),
     );
     expect(indexer.getSubscriptionCount()).toBe(0);
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -422,6 +428,7 @@ describe('GraphQLIndexer.subscribe() — WebSocket transport', () => {
 
     indexer.cleanup();
     randomSpy.mockRestore();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
