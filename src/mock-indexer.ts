@@ -47,17 +47,17 @@ export interface MockIndexerConfig {
  * No network calls are made — responses come from the config map.
  *
  * The returned indexer is a standard GraphQLIndexer instance, so all
- * existing methods (query, subscribe, cleanup, destroy) work as expected.
+ * existing methods (query, subscribe, cleanup) work as expected.
  * Only `query()` is mocked; subscriptions still require a real transport.
+ *
+ * Call `cleanup()` on the returned indexer to restore the original `fetch`.
  */
 export function createMockIndexer(config: MockIndexerConfig = {}): GraphQLIndexer {
   const { responses = {}, defaultResponse = { data: null }, latencyMs = 0 } = config
 
-  // Patch global fetch with a minimal mock that serves the responses map.
-  // This is scoped to the mock indexer — restore on cleanup/destroy.
   const originalFetch = globalThis.fetch
 
-  const mockFetch = async (endpoint: string | URL | Request, init?: RequestInit) => {
+  const mockFetch = async (_endpoint: string | URL | Request, init?: RequestInit) => {
     if (latencyMs > 0) {
       await new Promise(r => setTimeout(r, latencyMs))
     }
@@ -83,11 +83,11 @@ export function createMockIndexer(config: MockIndexerConfig = {}): GraphQLIndexe
 
   const indexer = new GraphQLIndexer('mock://indexer')
 
-  // Wrap destroy to restore the original fetch
-  const originalDestroy = indexer.destroy.bind(indexer)
-  indexer.destroy = () => {
+  // Wrap cleanup to restore the original fetch
+  const originalCleanup = indexer.cleanup.bind(indexer)
+  indexer.cleanup = () => {
     globalThis.fetch = originalFetch
-    originalDestroy()
+    originalCleanup()
   }
 
   return indexer

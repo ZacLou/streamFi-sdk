@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { createMockIndexer } from '../mock-indexer.js'
 
 afterEach(() => {
-  // Ensure fetch is restored even if destroy wasn't called
+  // Ensure fetch is restored even if cleanup wasn't called
 })
 
 describe('createMockIndexer (#607)', () => {
@@ -19,7 +19,7 @@ describe('createMockIndexer (#607)', () => {
 
     expect(result.streams).toHaveLength(1)
     expect(result.streams[0]!.id).toBe('1')
-    indexer.destroy()
+    indexer.cleanup()
   })
 
   it('returns default response when no query name matches', async () => {
@@ -33,7 +33,7 @@ describe('createMockIndexer (#607)', () => {
     })
 
     expect(result.unknown).toBe(true)
-    indexer.destroy()
+    indexer.cleanup()
   })
 
   it('throws on GraphQL errors in the mock response', async () => {
@@ -48,7 +48,7 @@ describe('createMockIndexer (#607)', () => {
     await expect(
       indexer.query({ query: 'query FailingQuery { nonexistent }' }),
     ).rejects.toThrow(/Field.*not found/)
-    indexer.destroy()
+    indexer.cleanup()
   })
 
   it('simulates latency when configured', async () => {
@@ -61,17 +61,17 @@ describe('createMockIndexer (#607)', () => {
     await indexer.query({ query: 'query Slow { ok }' })
     const elapsed = Date.now() - start
 
-    expect(elapsed).toBeGreaterThanOrEqual(40) // allow some jitter
-    indexer.destroy()
+    expect(elapsed).toBeGreaterThanOrEqual(40)
+    indexer.cleanup()
   })
 
-  it('restores global fetch on destroy', () => {
+  it('restores global fetch on cleanup', () => {
     const originalFetch = globalThis.fetch
     const indexer = createMockIndexer({ responses: {} })
 
     expect(globalThis.fetch).not.toBe(originalFetch)
 
-    indexer.destroy()
+    indexer.cleanup()
 
     expect(globalThis.fetch).toBe(originalFetch)
   })
