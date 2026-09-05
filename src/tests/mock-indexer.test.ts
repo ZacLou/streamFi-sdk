@@ -13,9 +13,9 @@ describe('createMockIndexer (#607)', () => {
       },
     })
 
-    const result = await indexer.query<{ streams: Array<{ id: string }> }>({
+    const result = await indexer.query({
       query: 'query GetStreams { streams { id } }',
-    })
+    }) as { streams: Array<{ id: string }> }
 
     expect(result.streams).toHaveLength(1)
     expect(result.streams[0]!.id).toBe('1')
@@ -28,9 +28,9 @@ describe('createMockIndexer (#607)', () => {
       defaultResponse: { data: { unknown: true } },
     })
 
-    const result = await indexer.query<{ unknown?: boolean }>({
+    const result = await indexer.query({
       query: 'query GetSomethingElse { things { id } }',
-    })
+    }) as { unknown?: boolean }
 
     expect(result.unknown).toBe(true)
     indexer.cleanup()
