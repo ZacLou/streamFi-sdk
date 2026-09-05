@@ -999,6 +999,7 @@ export class StreamsModule {
   }
 
   private async _resolveAddr(id: bigint, signal?: AbortSignal): Promise<string> {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     // Use the factory's bounded LRU cache for address resolution.
     // Stream contract addresses are immutable once assigned by the factory,
     // so the cache never needs invalidation.
@@ -1008,6 +1009,7 @@ export class StreamsModule {
   }
 
   private async _simulateTx(tx: Transaction, signal?: AbortSignal): Promise<xdr.ScVal> {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     const server = this._server();
     const result = await catchNetworkError('simulateTransaction', server.simulateTransaction(tx));
     if (SorobanRpc.Api.isSimulationError(result)) {
@@ -1028,7 +1030,7 @@ export class StreamsModule {
     }
     const assembled = SorobanRpc.assembleTransaction(tx, sim).build();
     const signed    = await this._signTx(assembled);
-    const { hash }  = await this._sendAndPoll(server, signed);
+    const { hash }  = await this._sendAndPoll(server, signed, signal);
     return hash;
   }
 
