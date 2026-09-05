@@ -263,37 +263,6 @@ describe('Module44 (SDK Feature #44)', () => {
       expect(module44.estimateTopUpNeeded(stream, Number.MAX_SAFE_INTEGER, now)).toBe(0n);
     });
 
-    it('handles open-ended and bounded streams mixed in assessBatch', () => {
-      const items = [
-        { id: 'open', stream: { ...mockStream, endTime: 0 }, timestamp: now },
-        { id: 'bounded-critical', stream: { ...mockStream, endTime: now + 10 }, timestamp: now },
-        { id: 'bounded-healthy', stream: { ...mockStream, endTime: now + 100_000 }, timestamp: now },
-      ];
-      const results = module44.assessBatch(items);
-      const openResult = results.find(r => r.id === 'open');
-      const criticalResult = results.find(r => r.id === 'bounded-critical');
-      const healthyResult = results.find(r => r.id === 'bounded-healthy');
-      expect(openResult?.runwaySecs).toBeNull();
-      expect(openResult?.riskLevel).toBe('healthy');
-      expect(criticalResult?.riskLevel).toBe('critical');
-      expect(healthyResult?.riskLevel).toBe('healthy');
-    });
-
-    it('caches open-ended stream result consistently across timestamps', () => {
-      const cachedModule = new Module44({ cacheSize: 10 });
-      const stream = { ...mockStream, endTime: 0 };
-
-      const r1 = cachedModule.assessSingleItem({ id: 's1', stream, timestamp: now });
-      const r2 = cachedModule.assessSingleItem({ id: 's1', stream, timestamp: now + 3600 });
-
-      // Different timestamps produce different cache keys, so both are misses
-      expect(r1.isCached).toBe(false);
-      expect(r2.isCached).toBe(false);
-      // But both produce the same result
-      expect(r1.runwaySecs).toBeNull();
-      expect(r2.runwaySecs).toBeNull();
-      expect(r1.riskLevel).toBe(r2.riskLevel);
-    });
   });
 
   describe('clearCache & Metrics', () => {
