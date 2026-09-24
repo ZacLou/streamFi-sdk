@@ -53,6 +53,8 @@ export class FactoryModule {
   private readonly addressCache = new Map<string, string | null>();
   private readonly negativeCacheExpiry = new Map<string, number>();
   private readonly _negativeCacheTtlMs: number;
+  private _cacheHits = 0;
+  private _cacheMisses = 0;
 
   constructor(private readonly config: ConduitConfig) {
     // Guard against direct construction with an unsupported network, which
@@ -132,8 +134,23 @@ export class FactoryModule {
     this.negativeCacheExpiry.clear();
   }
 
+  /** Cache performance counters so consumers can tune cache size / TTL. */
+  getCacheMetrics(): { hits: number; misses: number; size: number } {
+    return {
+      hits: this._cacheHits,
+      misses: this._cacheMisses,
+      size: this.addressCache.size,
+    };
+  }
+
+  resetCacheStats(): void {
+    this._cacheHits = 0;
+    this._cacheMisses = 0;
+  }
+
   /** Total number of streams ever created through this factory. */
   async streamCount(): Promise<bigint> {
+    this._cacheMisses++;
     const caller = await this._resolveCallerAddress();
     const tx  = await buildContractCallTx(
       this.rpcUrl, this.passphrase, caller,
@@ -150,6 +167,7 @@ export class FactoryModule {
 
     const cached = this.addressCache.get(key);
     if (cached !== undefined) {
+      this._cacheHits++;
       if (cached !== null) return cached;
       // Negative hit — honour it only while its TTL is live (#568).
       const expiresAt = this.negativeCacheExpiry.get(key) ?? 0;
@@ -158,6 +176,7 @@ export class FactoryModule {
       this.negativeCacheExpiry.delete(key);
     }
 
+    this._cacheMisses++;
     const caller = await this._resolveCallerAddress();
     const tx  = await buildContractCallTx(
       this.rpcUrl, this.passphrase, caller,
@@ -193,6 +212,7 @@ export class FactoryModule {
    * than sent through as-is (see #489).
    */
   async streamsBySender(address: string, offset = 0, limit = DEFAULT_LIST_LIMIT): Promise<bigint[]> {
+    this._cacheMisses++;
     const caller = await this._resolveCallerAddress();
     const tx  = await buildContractCallTx(
       this.rpcUrl, this.passphrase, caller,
@@ -214,6 +234,7 @@ export class FactoryModule {
    * than sent through as-is (see #489).
    */
   async streamsByRecipient(address: string, offset = 0, limit = DEFAULT_LIST_LIMIT): Promise<bigint[]> {
+    this._cacheMisses++;
     const caller = await this._resolveCallerAddress();
     const tx  = await buildContractCallTx(
       this.rpcUrl, this.passphrase, caller,
@@ -230,6 +251,7 @@ export class FactoryModule {
 
   /** Current protocol fee in basis points (e.g. 30 = 0.3%). */
   async protocolFeeBps(): Promise<number> {
+    this._cacheMisses++;
     const caller = await this._resolveCallerAddress();
     const tx  = await buildContractCallTx(
       this.rpcUrl, this.passphrase, caller,
