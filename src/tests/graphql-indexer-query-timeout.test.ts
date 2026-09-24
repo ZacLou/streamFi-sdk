@@ -13,7 +13,7 @@ import {
   GraphQLIndexer,
   DEFAULT_INDEXER_TIMEOUT_MS,
 } from '../indexer.js';
-import { IndexerTimeoutError } from '../errors.js';
+import { IndexerTimeoutError, OperationAbortedError } from '../errors.js';
 
 const endpoint = 'https://indexer.streamfi.io/graphql';
 
@@ -75,8 +75,12 @@ describe('GraphQLIndexer.query() — timeout & AbortSignal (fix for #569)', () =
 
     const indexer = new GraphQLIndexer(endpoint);
     const resultPromise = indexer.query({ query: '{ x }' });
+    resultPromise.catch(() => {}); // observe now; assertions below re-check it
 
-    vi.advanceTimersByTime(DEFAULT_INDEXER_TIMEOUT_MS + 1);
+    // The query hashes the operation (APQ, #629) with async WebCrypto before
+    // the request goes out; wait for the fetch, then let the timeout fire.
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(DEFAULT_INDEXER_TIMEOUT_MS + 1);
 
     await expect(resultPromise).rejects.toBeInstanceOf(IndexerTimeoutError);
     await expect(resultPromise).rejects.toMatchObject({
@@ -95,8 +99,10 @@ describe('GraphQLIndexer.query() — timeout & AbortSignal (fix for #569)', () =
 
     const indexer = new GraphQLIndexer(endpoint);
     const resultPromise = indexer.query({ query: '{ x }', timeoutMs: 500 });
+    resultPromise.catch(() => {});
 
-    vi.advanceTimersByTime(501);
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(501);
 
     await expect(resultPromise).rejects.toMatchObject({
       name: 'IndexerTimeoutError',
@@ -139,7 +145,7 @@ describe('GraphQLIndexer.query() — timeout & AbortSignal (fix for #569)', () =
     expect(clearTimeoutSpy).toHaveBeenCalled();
   });
 
-  it('rejects with an AbortError when the caller aborts via a supplied signal', async () => {
+  it('rejects with an OperationAbortedError when the caller aborts via a supplied signal (#624)', async () => {
     const fetchSpy = hangingFetch();
     vi.stubGlobal('fetch', fetchSpy);
 
@@ -149,11 +155,11 @@ describe('GraphQLIndexer.query() — timeout & AbortSignal (fix for #569)', () =
 
     controller.abort();
 
-    await expect(resultPromise).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(resultPromise).rejects.toBeInstanceOf(OperationAbortedError);
     indexer.cleanup();
   });
 
-  it('fails fast with an AbortError if the signal is already aborted', async () => {
+  it('fails fast with an OperationAbortedError if the signal is already aborted (#624)', async () => {
     const fetchSpy = hangingFetch();
     vi.stubGlobal('fetch', fetchSpy);
 
@@ -163,7 +169,7 @@ describe('GraphQLIndexer.query() — timeout & AbortSignal (fix for #569)', () =
     const indexer = new GraphQLIndexer(endpoint);
     await expect(
       indexer.query({ query: '{ x }', signal: controller.signal }),
-    ).rejects.toMatchObject({ name: 'AbortError' });
+    ).rejects.toBeInstanceOf(OperationAbortedError);
 
     // The request must never have been issued.
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -186,11 +192,11 @@ describe('GraphQLIndexer.query() — timeout & AbortSignal (fix for #569)', () =
     vi.advanceTimersByTime(DEFAULT_INDEXER_TIMEOUT_MS + 5000);
     controller.abort();
 
-    await expect(resultPromise).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(resultPromise).rejects.toBeInstanceOf(OperationAbortedError);
     indexer.cleanup();
   });
 
-  it('treats a caller abort during the timeout window as an AbortError, not a timeout', async () => {
+  it('treats a caller abort during the timeout window as an OperationAbortedError, not a timeout', async () => {
     const fetchSpy = hangingFetch();
     vi.stubGlobal('fetch', fetchSpy);
 
@@ -201,7 +207,7 @@ describe('GraphQLIndexer.query() — timeout & AbortSignal (fix for #569)', () =
     // Caller aborts before the 15s window elapses.
     controller.abort();
 
-    await expect(resultPromise).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(resultPromise).rejects.toBeInstanceOf(OperationAbortedError);
     indexer.cleanup();
   });
 });

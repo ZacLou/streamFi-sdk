@@ -40,14 +40,28 @@ describe('GraphQLIndexer Memory Leak & Real Network I/O Tests', () => {
 
     const result = await indexer.query({ query: queryStr, variables });
 
-    expect(fetchSpy).toHaveBeenCalledWith(endpoint, {
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [calledUrl, calledInit] = fetchSpy.mock.calls[0]!;
+    expect(calledUrl).toBe(endpoint);
+    expect(calledInit).toMatchObject({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      body: JSON.stringify({ query: queryStr, variables }),
       signal: expect.any(AbortSignal),
+    });
+    // Automatic Persisted Queries (#629): the first attempt sends the hash
+    // with a null query; the full string is only replayed on a cache miss.
+    expect(JSON.parse((calledInit as RequestInit).body as string)).toEqual({
+      query: null,
+      variables,
+      extensions: {
+        persistedQuery: {
+          version: 1,
+          sha256Hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+      },
     });
     // query() returns the unwrapped GraphQL `data` payload, not the envelope.
     expect(result).toEqual(mockResponseData.data);

@@ -9,7 +9,7 @@ async function main() {
       console.log(`Usage: npx create-streamfi-app <project-name> [options]
 
 Options:
-  --template <url>  Git repository to clone instead of the bundled StreamFi template
+  --template <name|url>  Starter to use: next-app, node-script, cron-worker, or a git URL to clone
   --skip-install    Do not install dependencies
   --help            Show this message`);
       return;

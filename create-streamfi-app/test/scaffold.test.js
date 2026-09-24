@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { DEFAULT_TEMPLATE, BUNDLED_TEMPLATE_DIR, SDK_PACKAGE, parseArguments, scaffold, testnetEnv } = require('../lib/scaffold');
+const { DEFAULT_TEMPLATE, BUNDLED_TEMPLATE_DIR, TEMPLATES_DIR, SDK_PACKAGE, BUILT_IN_TEMPLATES, parseArguments, scaffold, testnetEnv } = require('../lib/scaffold');
 
 test('parses a project name and defaults', () => {
   assert.deepEqual(parseArguments(['my-app']), {
@@ -8,10 +8,20 @@ test('parses a project name and defaults', () => {
   });
 });
 
-test('parses template and skip-install options', () => {
+test('parses built-in template name', () => {
+  assert.deepEqual(parseArguments(['my-app', '--template', 'node-script']), {
+    projectName: 'my-app', template: 'node-script', skipInstall: false, help: false,
+  });
+});
+
+test('parses template URL and skip-install options', () => {
   assert.deepEqual(parseArguments(['my-app', '--template', 'https://example.test/template.git', '--skip-install']), {
     projectName: 'my-app', template: 'https://example.test/template.git', skipInstall: true, help: false,
   });
+});
+
+test('rejects unknown built-in template name', () => {
+  assert.throws(() => parseArguments(['my-app', '--template', 'unknown-template']), /Unknown template/);
 });
 
 test('with an explicit --template, clones it and installs the SDK separately', () => {
@@ -33,7 +43,24 @@ test('with an explicit --template, clones it and installs the SDK separately', (
   assert.deepEqual(writes, [[process.cwd() + '/my-app/.env.local', testnetEnv(), 'utf8']]);
 });
 
-test('with no --template, copies the bundled StreamFi template and installs once', () => {
+test('with --template node-script, copies the node-script template and installs once', () => {
+  const calls = [];
+  const copies = [];
+  scaffold({ projectName: 'my-app', template: 'node-script', skipInstall: false }, {
+    existsSync: () => false,
+    resolve: (...parts) => parts.join('/'),
+    writeFileSync: () => {},
+    cpSync: (...args) => copies.push(args),
+    run: (...args) => calls.push(args),
+  });
+
+  assert.deepEqual(copies, [[TEMPLATES_DIR + '/node-script', process.cwd() + '/my-app', { recursive: true }]]);
+  assert.deepEqual(calls, [
+    ['npm', ['install'], { cwd: process.cwd() + '/my-app' }],
+  ]);
+});
+
+test('with no --template, copies the bundled next-app template and installs once', () => {
   const calls = [];
   const writes = [];
   const copies = [];
@@ -46,6 +73,8 @@ test('with no --template, copies the bundled StreamFi template and installs once
   });
 
   assert.deepEqual(copies, [[BUNDLED_TEMPLATE_DIR, process.cwd() + '/my-app', { recursive: true }]]);
+  assert.ok(testnetEnv('next-app').includes('NEXT_PUBLIC_NETWORK'), 'next-app env uses NEXT_PUBLIC_NETWORK');
+  assert.ok(testnetEnv('node-script').includes('STREAM_NETWORK'), 'node-script env uses STREAM_NETWORK');
   // No separate `npm install <SDK_PACKAGE>` — the bundled template already
   // declares it as a dependency.
   assert.deepEqual(calls, [

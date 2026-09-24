@@ -20,6 +20,7 @@ export interface WebSocketRelayerOptions {
   maxPendingMessages?: number;
   maxReconnectAttempts?: number;
   reconnectDelayMs?: number;
+  maxReconnectDelayMs?: number;
   onStateChange?: StateChangeHandler;
 }
 
@@ -37,6 +38,7 @@ export class WebSocketRelayer {
   private reconnectExhausted = false;
   private maxReconnectAttempts: number;
   private reconnectDelayMs: number;
+  private maxReconnectDelayMs: number;
   private pendingMessages: WebSocketMessage[] = [];
   private maxPendingMessages: number;
   private stateTransition: RelayerStateTransition = 'disconnected';
@@ -45,6 +47,7 @@ export class WebSocketRelayer {
     this.url = url;
     this.maxReconnectAttempts = options?.maxReconnectAttempts ?? 5;
     this.reconnectDelayMs = options?.reconnectDelayMs ?? 1000;
+    this.maxReconnectDelayMs = options?.maxReconnectDelayMs ?? 30_000;
     this.maxPendingMessages = options?.maxPendingMessages ?? 1000;
     if (options?.onStateChange) {
       this.stateChangeHandlers.add(options.onStateChange);
@@ -304,7 +307,13 @@ export class WebSocketRelayer {
 
       this.reconnectAttempts++;
       this.emitStateChange('reconnecting');
-      await new Promise((r) => setTimeout(r, this.reconnectDelayMs * this.reconnectAttempts));
+      const delay = Math.min(
+        this.maxReconnectDelayMs,
+        this.reconnectDelayMs * 2 ** (this.reconnectAttempts - 1),
+      ) * (0.5 + Math.random() * 0.5);
+      await new Promise((r) => setTimeout(r, delay));
+      // disconnect()/destroy() can land during the backoff delay; bail before
+      // opening another socket if reconnection was cancelled meanwhile (#619).
       if (this.isDestroyed || !this.reconnectEnabled) return;
 
       await this.establishConnection();

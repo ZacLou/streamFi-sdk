@@ -18,6 +18,8 @@ import {
 import type { Network } from './types/index.js';
 import type { Signer } from './signer.js';
 import { RateLimitError, StreamFiNetworkError, InsufficientBalanceError } from './errors.js';
+import { withRetry } from './with-retry.js';
+import { recordSuccess, recordFailure } from './rpc-circuit-state.js';
 
 // ── RPC Server cache ─────────────────────────────────────────────────────────
 // Reusing SorobanRpc.Server instances avoids creating a new HTTP agent per
@@ -107,26 +109,18 @@ export function createRpcServer(rpcUrl: string): SorobanRpc.Server {
       const origMethod = Reflect.get(target, propKey, receiver) as unknown;
       if (typeof origMethod === 'function' && typeof propKey === 'string' && !EXCLUDED_METHODS.includes(propKey)) {
         return async function (...args: unknown[]) {
-          const MAX_RETRIES = 3;
-          let delay = 500;
-
-          for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-            try {
-              return await (origMethod as (...a: unknown[]) => Promise<unknown>).apply(target, args);
-            } catch (err) {
-              const classified = RateLimitError.fromRpcError(err);
-
-              // Only a genuine RateLimitError (HTTP 429 / JSON-RPC 429) is
-              // retried with backoff. A 503 is classified as
-              // RpcServiceUnavailableError and thrown immediately.
-              if (!(classified instanceof RateLimitError) || attempt === MAX_RETRIES) {
-                throw classified ?? err;
-              }
-              const waitTime = classified.retryAfterMs ?? delay;
-              await sleep(waitTime);
-              delay *= 2; // Backoff factor: 2x
-            }
-          }
+          return withRetry(
+            () => (origMethod as (...a: unknown[]) => Promise<unknown>).apply(target, args),
+            { maxRetries: 3, baseDelayMs: 500, backoffFactor: 2 },
+          )
+            .then((result) => {
+              recordSuccess(rpcUrl);
+              return result;
+            })
+            .catch((err) => {
+              recordFailure(rpcUrl);
+              throw err;
+            });
         };
       }
       return Reflect.get(target, propKey, receiver);
@@ -320,7 +314,7 @@ export async function getTokenDecimals(
   const promise = (async () => {
     const tx  = await buildContractCallTx(rpcUrl, passphrase, callerAddr, tokenId, 'decimals', []);
     const val = await simulateReadOnly(rpcUrl, passphrase, tx);
-    return val.u32();
+    return scValToU32(val);
   })();
 
   _tokenDecimalsCache.set(cacheKey, promise);

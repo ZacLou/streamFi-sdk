@@ -6,10 +6,13 @@ export type {
   BatchExecuteAsyncOptions,
   BatchResult,
 } from './builder.js';
+export { withRetry, isTransientRpcError } from './with-retry.js';
+export type { WithRetryOptions } from './with-retry.js';
 export {
   buildBatchTransactions,
   buildBatchTransactionsSync,
   BatchBuildError,
+  BatchPartiallySubmittedError,
   submitBatch,
 } from './batch-tx.js';
 export type {
@@ -22,6 +25,8 @@ export type {
   BatchSubmitOptions,
 } from './batch-tx.js';
 export { GraphQLIndexer, DEFAULT_INDEXER_TIMEOUT_MS } from './indexer.js';
+export { MockGraphQLIndexer, createMockIndexer } from './mock-indexer.js';
+export type { MockQueryMap, MockSubscriptionMap, MockIndexerOptions } from './mock-indexer.js';
 export type {
   GraphQLQueryOptions,
   GraphQLSubscriptionOptions,
@@ -40,20 +45,21 @@ export {
   RateLimitError,
   RpcServiceUnavailableError,
   IndexerTimeoutError,
+  OperationAbortedError,
+  isConduitError,
   SUPPORTED_NETWORKS,
   CAIP2_TO_NETWORK,
   UNKNOWN_CONTRACT_ERROR_CODE,
 } from './errors.js';
 export type { ConduitContract } from './errors.js';
 export * from './types/index.js';
+export type { GetStreamInfosOptions, GetStreamInfosResult, GetStreamInfosFailure } from './types/index.js';
 export * from './adapters/index.js';
 export { FeeEstimator } from './fee-estimator.js';
 export type { FeeEstimateOptions } from './fee-estimator.js';
 export { WebSocketRelayer } from './relayer/WebSocketRelayer.js';
 export { ErrorMapper } from './relayer/ErrorMapper.js';
 export type { MappedErrorHandler } from './relayer/ErrorMapper.js';
-export { NonceManager } from './nonce/NonceManager.js';
-export type { NonceLock, NonceManagerOptions } from './nonce/NonceManager.js';
 
 // Utils are exported via the /utils subpath export, but also available here
 export {
@@ -71,6 +77,7 @@ export {
 // RPC server lifecycle
 export { getServer, clearServerCache, resolveFee } from './soroban.js';
 export { getTokenDecimals, clearTokenDecimalsCache } from './soroban.js';
+export { getCircuitState, recordSuccess, recordFailure, resetCircuit, getAllCircuitStates, type CircuitState, type CircuitStatus } from "./rpc-circuit-state.js";
 
 export {
   formatAddress,

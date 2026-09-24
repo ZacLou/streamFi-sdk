@@ -97,8 +97,9 @@ describe('calculateRate', () => {
     expect(calculateRate('0', 3600)).toBe(0n);
   });
 
-  it('returns 0 for zero duration', () => {
-    expect(calculateRate('1000', 0)).toBe(0n);
+  it('rejects a zero or negative duration (#536)', () => {
+    expect(() => calculateRate('1000', 0)).toThrow(/positive integer/);
+    expect(() => calculateRate('1000', -5)).toThrow(/positive integer/);
   });
 });
 

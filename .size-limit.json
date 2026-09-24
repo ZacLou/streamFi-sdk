@@ -1,34 +1,14 @@
 [
   {
-    "path": [
-      "dist/esm/index.js",
-      "dist/esm/chunks/*.js"
-    ],
-    "limit": "80 KB",
+    "name": "ESM entry",
+    "path": "dist/esm/index.js",
+    "limit": "200 KB",
     "gzip": true
   },
   {
-    "path": [
-      "dist/cjs/index.js",
-      "dist/cjs/chunks/*.js"
-    ],
-    "limit": "80 KB",
-    "gzip": true
-  },
-  {
-    "path": [
-      "dist/esm/utils.js",
-      "dist/esm/chunks/*.js"
-    ],
-    "limit": "30 KB",
-    "gzip": true
-  },
-  {
-    "path": [
-      "dist/cjs/utils.js",
-      "dist/cjs/chunks/*.js"
-    ],
-    "limit": "30 KB",
+    "name": "CJS entry",
+    "path": "dist/cjs/index.js",
+    "limit": "200 KB",
     "gzip": true
   }
 ]

@@ -37,16 +37,18 @@ export function toStroops(amount: string, decimals = 7): bigint {
 
 /** Convert stroops (bigint) to a display amount string */
 export function fromStroops(stroops: bigint, decimals = 7): string {
+  const neg = stroops < 0n;
+  const abs = neg ? -stroops : stroops;
   const factor = pow10(decimals);
-  const whole = stroops / factor;
-  const rem = stroops % factor;
+  const whole = abs / factor;
+  const rem = abs % factor;
   const frac = rem.toString().padStart(decimals, '0');
   let end = frac.length;
   while (end > 1 && frac.charCodeAt(end - 1) === 48) {
     end--;
   }
   const trimmed = frac.slice(0, end);
-  return `${whole}.${trimmed}`;
+  return `${neg ? '-' : ''}${whole}.${trimmed}`;
 }
 
 /**
@@ -57,6 +59,9 @@ export function fromStroops(stroops: bigint, decimals = 7): string {
  * @param decimals       Token decimal places (default 7 for Stellar assets)
  */
 export function calculateRate(depositAmount: string, durationSecs: number, decimals = 7): bigint {
+  if (!Number.isInteger(durationSecs) || durationSecs <= 0) {
+    throw new Error(`durationSecs must be a positive integer, got ${durationSecs}`);
+  }
   const stroops = toStroops(depositAmount, decimals);
   const divisor = BigInt(durationSecs);
   if (divisor === 0n) return 0n;
@@ -80,6 +85,9 @@ export function calculateYield(
   durationSecs = 31_536_000,
   decimals = 7,
 ): string {
+  if (!Number.isInteger(durationSecs) || durationSecs <= 0) {
+    throw new Error(`durationSecs must be a positive integer, got ${durationSecs}`);
+  }
   const totalStroops = ratePerSecond * BigInt(durationSecs);
   return fromStroops(totalStroops, decimals);
 }

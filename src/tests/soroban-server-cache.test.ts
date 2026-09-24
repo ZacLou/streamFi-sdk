@@ -91,6 +91,16 @@ describe('clearServerCache', () => {
     const b = getServer(MAINNET_RPC);
     expect(a).toBe(b);
   });
+
+  it('empties both the raw and proxied server caches', () => {
+    const rawBefore = getServer(MAINNET_RPC);
+    const proxiedBefore = createRpcServer(MAINNET_RPC);
+    clearServerCache();
+    const rawAfter = getServer(MAINNET_RPC);
+    const proxiedAfter = createRpcServer(MAINNET_RPC);
+    expect(rawAfter).not.toBe(rawBefore);
+    expect(proxiedAfter).not.toBe(proxiedBefore);
+  });
 });
 
 // ---------------------------------------------------------------------------

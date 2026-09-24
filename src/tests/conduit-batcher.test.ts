@@ -112,7 +112,7 @@ describe('ConduitBatcher', () => {
       const token = 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526';
 
       const result = batcher.execute([
-        { token, sender: contractSender, recipient: contractRecipient, amount: 100 },
+        { token, sender: contractSender, recipient: contractRecipient, amount: 100n },
       ], { context: TEST_CONTEXT });
 
       expect(result.success).toBe(true);
@@ -155,7 +155,7 @@ describe('ConduitBatcher', () => {
     });
 
     it('handles a single-item batch', () => {
-      const result = batcher.execute([{ token: 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526', amount: 100 }], { context: TEST_CONTEXT });
+      const result = batcher.execute([{ token: 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526', amount: 100n }], { context: TEST_CONTEXT });
 
       expect(result.success).toBe(true);
       expect(result.operations).toBe(1);

@@ -421,4 +421,40 @@ describe('subscribeToStream', () => {
     sub.unsubscribe();
     warn.mockRestore();
   });
+
+  it('replays missed events by sequence on reconnect (#623)', async () => {
+    const { Address, Keypair, nativeToScVal } = await import('@stellar/stellar-sdk');
+    const sender = Keypair.random().publicKey();
+    const clawbackAt = (seq: number) => ({
+      ledger: 1,
+      topic: [
+        xdr.ScVal.scvSymbol('clawback'),
+        new Address(sender).toScVal(),
+        nativeToScVal(BigInt(seq), { type: 'u64' }),
+      ],
+      value: xdr.ScVal.scvI128(
+        new xdr.Int128Parts({ hi: xdr.Int64.fromString('0'), lo: xdr.Uint64.fromString(String(seq)) }),
+      ),
+    });
+
+    // First poll sees sequence 1 and 3, creating a gap at 2.
+    mockGetEvents
+      .mockResolvedValueOnce({ events: [clawbackAt(1), clawbackAt(3)] })
+      .mockResolvedValueOnce({ events: [clawbackAt(2)] });
+
+    const { subscribeToStream } = await import('../events.js');
+
+    const received: number[] = [];
+    const sub = subscribeToStream('http://localhost:8000', 'CSTREAM', {
+      onClawback: (event) => { received.push(Number(event.sequence)); },
+    });
+
+    await vi.waitFor(() => expect(received).toContain(1));
+    await vi.waitFor(() => expect(received).toContain(3));
+    // The backfill poll should eventually dispatch the missed sequence 2.
+    await vi.waitFor(() => expect(received).toContain(2), { timeout: 3000 });
+    expect(received).toEqual([1, 3, 2]);
+
+    sub.unsubscribe();
+  });
 });

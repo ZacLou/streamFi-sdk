@@ -260,6 +260,72 @@ describe('submitBatch — stop on failure (#518 core regression)', () => {
   });
 });
 
+
+describe('submitBatch — onProgress callback', () => {
+  it('emits a progress event for every terminal outcome', async () => {
+    mockSendTransaction
+      .mockResolvedValueOnce(sendOk(0))
+      .mockResolvedValueOnce(sendOk(1))
+      .mockResolvedValueOnce(sendOk(2));
+    mockGetTransaction.mockResolvedValue(statusOk());
+
+    const progress: { index: number; method: string; status: string }[] = [];
+    const onProgress = vi.fn((p) => progress.push(p));
+
+    const result = await submitBatch(
+      [makeTx(0, 'withdraw'), makeTx(1, 'pause'), makeTx(2, 'cancel')],
+      RPC_URL,
+      { ...OPTS, onProgress },
+    );
+
+    expect(result.allSucceeded).toBe(true);
+    expect(onProgress).toHaveBeenCalledTimes(3);
+    expect(progress.map(p => ({ index: p.index, method: p.method, status: p.status })))
+      .toEqual([
+        { index: 0, method: 'withdraw', status: 'SUCCESS' },
+        { index: 1, method: 'pause', status: 'SUCCESS' },
+        { index: 2, method: 'cancel', status: 'SUCCESS' },
+      ]);
+  });
+
+  it('reports FAILED then SKIPPED for remaining transactions after a failure', async () => {
+    mockSendTransaction
+      .mockResolvedValueOnce(sendOk(0))
+      .mockResolvedValueOnce({ status: 'ERROR', errorResult: 'txBAD_AUTH' });
+    mockGetTransaction.mockResolvedValueOnce(statusOk());
+
+    const onProgress = vi.fn();
+    const result = await submitBatch(
+      [makeTx(0), makeTx(1), makeTx(2)],
+      RPC_URL,
+      { ...OPTS, onProgress },
+    );
+
+    expect(result.firstFailureIndex).toBe(1);
+    expect(onProgress).toHaveBeenCalledTimes(3);
+    expect(onProgress).toHaveBeenNthCalledWith(1, { index: 0, method: 'op', status: 'SUCCESS' });
+    expect(onProgress).toHaveBeenNthCalledWith(2, { index: 1, method: 'op', status: 'FAILED' });
+    expect(onProgress).toHaveBeenNthCalledWith(3, { index: 2, method: 'op', status: 'SKIPPED' });
+  });
+
+  it('does not let an onProgress exception break the batch', async () => {
+    mockSendTransaction.mockResolvedValue(sendOk(0));
+    mockGetTransaction.mockResolvedValue(statusOk());
+
+    const onProgress = vi.fn()
+      .mockImplementationOnce(() => { throw new Error('progress UI crashed'); });
+
+    const result = await submitBatch(
+      [makeTx(0), makeTx(1)],
+      RPC_URL,
+      { ...OPTS, onProgress },
+    );
+
+    expect(result.allSucceeded).toBe(true);
+    expect(onProgress).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('submitBatch — sign callback', () => {
   it('calls sign() for each transaction before submitting', async () => {
     mockSendTransaction.mockResolvedValue(sendOk(0));

@@ -161,6 +161,16 @@ export class UnsupportedChainError extends Error {
   }
 }
 
+/**
+ * The root error for any failure that originated from a Conduit smart
+ * contract. The `contract` + `code` pair uniquely identifies the failure,
+ * and `isKnown` tells you whether the SDK recognises the code in its
+ * catalogue for that contract.
+ *
+ * Use {@link isConduitError} when you need a type guard instead of an
+ * `instanceof` check (e.g. across bundle boundaries or when the error may
+ * have been serialized).
+ */
 export class ConduitError extends Error {
   readonly contract: ConduitContract;
   readonly code: number;
@@ -444,6 +454,105 @@ export class IndexerTimeoutError extends Error {
     this.name = 'IndexerTimeoutError';
     this.endpoint = endpoint;
     this.timeoutMs = timeoutMs;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+// ── Operation aborted ─────────────────────────────────────────────────────────
+
+/**
+ * Thrown when an in-flight SDK operation is cancelled by the caller through
+ * an `AbortSignal`. This gives consumers a typed, SDK-native way to
+ * distinguish "the user cancelled" from network, contract, or indexer errors,
+ * instead of relying on the generic DOM `AbortError`.
+ *
+ * @example
+ * ```ts
+ * const controller = new AbortController();
+ * const promise = client.streams.create({ ... }, { signal: controller.signal });
+ * controller.abort();
+ * try { await promise; } catch (err) {
+ *   if (err instanceof OperationAbortedError) {
+    console.log('Cancelled by user:', err.operation);
+   }
+ }
+ ```
+ */
+export class OperationAbortedError extends Error {
+  /** Human-readable name of the operation that was aborted (e.g. "submitBatch"). */
+  readonly operation: string;
+
+  constructor(operation: string) {
+    super(`Operation aborted: ${operation}`);
+    this.name = 'OperationAbortedError';
+    this.operation = operation;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+// ── Type guard ────────────────────────────────────────────────────────────────
+
+/**
+ * Returns `true` when `value` is a Conduit SDK error instance. Useful in
+ * catch blocks, logging, and transport boundaries where you cannot rely on
+ * `instanceof` across realms or bundled chunks.
+ *
+ * Recognised error classes:
+ * - {@link ConduitError}
+ * - {@link UnsupportedChainError}
+ * - {@link StreamFiNetworkError}
+ * - {@link InsufficientBalanceError}
+ * - {@link RateLimitError}
+ * - {@link RpcServiceUnavailableError}
+ * - {@link IndexerTimeoutError}
+ * - {@link OperationAbortedError}
+ */
+export function isConduitError(value: unknown): value is Error {
+  if (!(value instanceof Error)) return false;
+  return [
+    'ConduitError',
+    'UnsupportedChainError',
+    'StreamFiNetworkError',
+    'InsufficientBalanceError',
+    'RateLimitError',
+    'RpcServiceUnavailableError',
+    'IndexerTimeoutError',
+    'OperationAbortedError',
+    'ValidationError',
+  ].includes(value.name);
+}
+
+// ── Validation error ─────────────────────────────────────────────────────────
+
+/**
+ * Thrown when a {@link StreamBuilder} fails validation with one or more
+ * issues. Unlike the previous behaviour of throwing on the first problem,
+ * `validate()` collects every issue and raises a single error so callers
+ * can surface the full list in a form or toast.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   builder.build();
+ * } catch (err) {
+ *   if (err instanceof ValidationError) {
+ *     console.error(err.message);     // "3 validation issue(s) ..."
+ *     console.error(err.issues);      // ["token is required", ...]
+ *   }
+ * }
+ * ```
+ */
+export class ValidationError extends Error {
+  /** The individual validation messages collected by `validate()`. */
+  readonly issues: readonly string[];
+
+  constructor(issues: string[]) {
+    const summary = issues.length === 1
+      ? issues[0]
+      : `${issues.length} validation issue(s): ${issues.join('; ')}`;
+    super(summary);
+    this.name = 'ValidationError';
+    this.issues = Object.freeze(issues.slice());
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }

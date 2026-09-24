@@ -1,5 +1,5 @@
 import { StrKey, Address, nativeToScVal } from '@stellar/stellar-sdk';
-import { bigintSafeStringify } from './utils.js';
+import { bigintSafeStringify, toStroops } from './utils.js';
 import { boolToScVal } from './soroban.js';
 import {
   buildBatchTransactions,
@@ -7,6 +7,7 @@ import {
   paramToScVal,
   validateContext,
 } from './batch-tx.js';
+import { OperationAbortedError, ValidationError } from './errors.js';
 import type { BatchTransactionContext, BuiltBatchTransaction, ScValType } from './batch-tx.js';
 
 export interface SubmitOptions {
@@ -200,22 +201,48 @@ export class StreamBuilder {
    * @returns An object containing `token`, `sender`, `recipient`, `amount`, and optionally `ratePerSecond`.
    * @throws {Error} If any required field (`token`, `sender`, `recipient`, `amount`) is missing or malformed.
    */
+  /**
+   * Collects every validation problem with the current builder state
+   * without mutating anything. Returns an array of human-readable issue
+   * strings; an empty array means the builder is valid.
+   */
+  validate(): string[] {
+    const issues: string[] = [];
+
+    if (this._token === undefined || this._token === null) {
+      issues.push('token is required');
+    }
+    if (this._sender === undefined || this._sender === null) {
+      issues.push('sender is required');
+    }
+    if (this._recipient === undefined || this._recipient === null) {
+      issues.push('recipient is required');
+    }
+    if (this._amount === undefined || this._amount === null) {
+      issues.push('amount is required');
+    }
+
+    return issues;
+  }
+
   build() {
     if (this.isDestroyed) {
       throw new Error('StreamBuilder has been destroyed');
     }
-    if (this._token === undefined || this._token === null ||
-        this._sender === undefined || this._sender === null ||
-        this._recipient === undefined || this._recipient === null ||
-        this._amount === undefined || this._amount === null) {
-      throw new Error('Missing required parameters for StreamBuilder');
+    const issues = this.validate();
+    if (issues.length > 0) {
+      throw new ValidationError(issues);
     }
 
     const config: Record<string, unknown> = {
       token: this._token,
       sender: this._sender,
       recipient: this._recipient,
-      amount: typeof this._amount === 'bigint' ? this._amount.toString() : this._amount,
+      // Coerce to string regardless of input type: build()'s return type
+      // promises `amount: string`, and ConduitBatcher's payload validation
+      // rejects a raw `number` (a float-precision hazard for token amounts).
+      // Same rationale as `ratePerSecond` below (see #459).
+      amount: typeof this._amount === 'bigint' ? this._amount.toString() : String(this._amount),
     };
     if (this._ratePerSecond !== undefined && this._ratePerSecond !== null) {
       // build()'s return type promises `ratePerSecond?: string`, but
@@ -235,7 +262,7 @@ export class StreamBuilder {
       token: string;
       sender: string;
       recipient: string;
-      amount: number;
+      amount: string;
       ratePerSecond?: string;
       startTime?: number;
       endTime?: number;
@@ -312,7 +339,7 @@ export class StreamBuilder {
 
     const { signal } = options;
     if (signal?.aborted) {
-      throw new DOMException('Aborted', 'AbortError');
+      throw new OperationAbortedError('submit');
     }
 
     // Backpressure: reject if queue is full
@@ -340,7 +367,7 @@ export class StreamBuilder {
         }
 
         if (signal?.aborted) {
-          throw new DOMException('Aborted', 'AbortError');
+          throw new OperationAbortedError('submit');
         }
 
         try {
@@ -352,7 +379,7 @@ export class StreamBuilder {
           return result;
         } catch (err) {
           if (signal?.aborted) {
-            throw new DOMException('Aborted', 'AbortError');
+            throw new OperationAbortedError('submit');
           }
           lastError = err;
           attempt++;
@@ -371,7 +398,7 @@ export class StreamBuilder {
                   clearTimeout(timer);
                   this.activeTimers.delete(timer);
                   signal.removeEventListener('abort', onAbort);
-                  reject(new DOMException('Aborted', 'AbortError'));
+                  reject(new OperationAbortedError('submit'));
                 };
                 signal.addEventListener('abort', onAbort, { once: true });
               }
@@ -573,11 +600,24 @@ function validatePayload(streams: unknown): string[] {
         }
       }
 
-      // Validate amount field — must be a positive finite number (where present)
+      // Validate amount field — must be a bigint or a decimal string parseable by toStroops
       if (obj.amount !== undefined && obj.amount !== null) {
-        const amount = Number(obj.amount);
-        if (!Number.isFinite(amount) || amount <= 0) {
-          errors.push(`Batch item at index ${i}: amount must be a positive finite number, got "${obj.amount}"`);
+        const amt = obj.amount;
+        if (typeof amt === 'bigint') {
+          if (amt <= 0n) {
+            errors.push(`Batch item at index ${i}: amount must be a positive bigint, got ${amt.toString()}`);
+          }
+        } else if (typeof amt === 'string') {
+          try {
+            const stroops = toStroops(amt);
+            if (stroops <= 0n) {
+              errors.push(`Batch item at index ${i}: amount must be a positive value, got "${amt}"`);
+            }
+          } catch {
+            errors.push(`Batch item at index ${i}: amount must be a valid decimal string (e.g. "1000" or "1.5"), got "${amt}"`);
+          }
+        } else {
+          errors.push(`Batch item at index ${i}: amount must be a bigint or decimal string, got ${typeof amt}`);
         }
       }
     }

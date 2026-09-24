@@ -574,3 +574,38 @@ describe('StreamsModule — server caching', () => {
     expect(server1).toBe(server2);
   });
 });
+
+describe('StreamsModule.getStreamInfos', () => {
+  it('returns results and failures for a mixed fan-out', async () => {
+    const { StreamsModule } = await import('../streams.js');
+    const sdk = new StreamsModule(makeConfig(false));
+
+    const goodInfo = { id: 1n, address: 'C_GOOD' } as unknown as import('../types/index.js').StreamInfo;
+    vi.spyOn(sdk, 'get').mockImplementation(async (id) => {
+      if (id === 1n || id === '1') return goodInfo;
+      throw new Error('not found');
+    });
+
+    const result = await sdk.getStreamInfos([1n, 2n, '3'], { maxConcurrency: 2 });
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]).toBe(goodInfo);
+    expect(result.failures).toHaveLength(2);
+    expect(result.failures.map(f => ({ id: f.id, error: f.error }))).toEqual([
+      { id: 2n, error: 'not found' },
+      { id: 3n, error: 'not found' },
+    ]);
+  });
+
+  it('preserves input order', async () => {
+    const { StreamsModule } = await import('../streams.js');
+    const sdk = new StreamsModule(makeConfig(false));
+    vi.spyOn(sdk, 'get').mockImplementation(async (id) => ({
+      id: BigInt(id),
+      address: 'C_' + String(id),
+    } as unknown as import('../types/index.js').StreamInfo));
+
+    const result = await sdk.getStreamInfos([5n, 4n, 3n]);
+    expect(result.results.map(i => i.id)).toEqual([5n, 4n, 3n]);
+  });
+});

@@ -14,6 +14,8 @@ import type {
   Subscription,
   BatchWithdrawItem,
   BatchWithdrawResult,
+  BatchCreateStreamResult,
+  StreamConfig,
   StreamOperation,
   FeeEstimate,
 } from './types/index.js';
@@ -44,6 +46,8 @@ import {
   STREAM_FLAG_CANCELLED,
   STREAM_FLAG_CLAWBACK_ENABLED,
 } from './constants.js';
+import { buildBatchTransactions } from './batch-tx.js';
+import type { BatchTransactionContext } from './batch-tx.js';
 import { FactoryModule } from './factory.js';
 import { ConduitError, RateLimitError, InsufficientBalanceError, StreamErrorCode } from './errors.js';
 
@@ -321,6 +325,36 @@ export class StreamsModule {
     return parseStreamInfo(id, addr, val);
   }
 
+  /**
+   * Fetch full stream state for many stream IDs with bounded concurrency.
+   *
+   * Returns both successful results and per-id failures so one missing or
+   * broken stream does not fail the whole fan-out. Order of `results` and
+   * `failures` matches the input order.
+   */
+  async getStreamInfos(
+    streamIds: (bigint | string)[],
+    options: import('./types/index.js').GetStreamInfosOptions = {},
+  ): Promise<import('./types/index.js').GetStreamInfosResult> {
+    const ids = streamIds.map(id => BigInt(id));
+    const concurrency = Math.max(1, options.maxConcurrency ?? DEFAULT_LIST_CONCURRENCY);
+
+    const outcomes = await mapWithConcurrency(ids, concurrency, async (id) => {
+      try {
+        const info = await this.get(id);
+        return { ok: true as const, id, info };
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        return { ok: false as const, id, error };
+      }
+    });
+
+    return {
+      results: outcomes.filter(o => o.ok).map(o => o.info),
+      failures: outcomes.filter(o => !o.ok).map(o => ({ id: o.id, error: o.error })),
+    };
+  }
+
   /** Get withdrawable balance - read-only, no transaction. */
   async withdrawable(streamId: bigint | string): Promise<bigint> {
     const id   = BigInt(streamId);
@@ -407,6 +441,154 @@ export class StreamsModule {
       }
     }
     return results;
+  }
+
+  /**
+   * Create multiple streams in bulk.
+   *
+   * Soroban permits only one invoke_host_function operation per transaction
+   * (see {@link buildBatchTransactions}), so this builds and submits one
+   * transaction per config. Each transaction consumes the sender's next
+   * sequence number in order, so every config remains independently
+   * submittable regardless of how many configs are in the batch — unlike
+   * fetching a fresh account/sequence per config, which would hand out the
+   * same sequence number to more than one transaction once submitted out of
+   * order.
+   *
+   * Per-config client-side validation failures do not block or roll back the
+   * rest of the batch — each config is reported independently by its
+   * original index, mirroring {@link batchWithdraw}. Note this isolation
+   * does not extend to on-chain simulation: {@link buildBatchTransactions}
+   * simulates every config's transaction in parallel via `Promise.all`, so
+   * one config's simulation being rejected currently fails building the
+   * whole batch, not just that config.
+   */
+  async createBatchStreams(configs: StreamConfig[]): Promise<BatchCreateStreamResult[]> {
+    this._ensureCanMutate();
+    if (!Array.isArray(configs) || configs.length === 0) return [];
+
+    const senderAddr = await this._getSenderAddress();
+    const factoryId  = this.config.factoryAddress ?? '';
+
+    const built = await Promise.all(configs.map(async (params, index) => {
+      try {
+        const {
+          recipient, token, depositAmount,
+          durationSeconds, ratePerSecond,
+          startTime, clawbackEnabled = false,
+        } = params;
+
+        if (!recipient || typeof recipient !== 'string' || !recipient.trim()) {
+          throw new Error('Invalid recipient address: must be a non-empty string');
+        }
+        if (!token || typeof token !== 'string' || !token.trim()) {
+          throw new Error('Invalid token address: must be a non-empty string');
+        }
+        if (!depositAmount || typeof depositAmount !== 'string' || !depositAmount.trim()) {
+          throw new Error('Invalid deposit amount: must be a non-empty string');
+        }
+        if (durationSeconds !== undefined && (typeof durationSeconds !== 'number' || durationSeconds <= 0)) {
+          throw new Error('Invalid durationSeconds: must be a positive number');
+        }
+        if (ratePerSecond !== undefined && (typeof ratePerSecond !== 'string' || !ratePerSecond.trim())) {
+          throw new Error('Invalid ratePerSecond: must be a non-empty string');
+        }
+        if (!durationSeconds && !ratePerSecond) {
+          throw new Error('Either durationSeconds or ratePerSecond must be provided');
+        }
+
+        const decimals = await getTokenDecimals(this.rpcUrl, this.passphrase, senderAddr, token);
+        const depositStroops = toStroops(depositAmount, decimals);
+        const rateStroops    = ratePerSecond
+          ? BigInt(ratePerSecond)
+          : calculateRate(depositAmount, durationSeconds!, decimals);
+        const start = startTime ?? Math.floor(Date.now() / 1000);
+        const end   = durationSeconds ? start + durationSeconds : 0;
+
+        const args = [
+          new Address(senderAddr).toScVal(),
+          new Address(recipient).toScVal(),
+          new Address(token).toScVal(),
+          nativeToScVal(depositStroops, { type: 'i128' }),
+          nativeToScVal(rateStroops,    { type: 'i128' }),
+          nativeToScVal(start,          { type: 'u64'  }),
+          nativeToScVal(end,            { type: 'u64'  }),
+          boolToScVal(clawbackEnabled),
+        ];
+        return { index, args, error: undefined as string | undefined };
+      } catch (err) {
+        return { index, args: undefined, error: err instanceof Error ? err.message : String(err) };
+      }
+    }));
+
+    const results = new Map<number, BatchCreateStreamResult>();
+    for (const b of built) {
+      if (b.error !== undefined) {
+        results.set(b.index, { index: b.index, success: false, error: b.error });
+      }
+    }
+
+    const validEntries = built.filter(
+      (b): b is { index: number; args: xdr.ScVal[]; error: undefined } => b.args !== undefined,
+    );
+
+    if (validEntries.length > 0) {
+      const context: BatchTransactionContext = {
+        contractId: factoryId,
+        sourceAccount: senderAddr,
+        networkPassphrase: this.passphrase,
+        rpcUrl: this.rpcUrl,
+      };
+
+      let builtTxs: Awaited<ReturnType<typeof buildBatchTransactions>>;
+      try {
+        const operations = validEntries.map(b => ({ method: 'create_stream', args: b.args }));
+        builtTxs = await buildBatchTransactions(operations, context);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        for (const b of validEntries) {
+          results.set(b.index, { index: b.index, success: false, error: message });
+        }
+        builtTxs = [];
+      }
+
+      const server = this._server();
+      const settled = await Promise.allSettled(
+        builtTxs.map(async (bt) => {
+          const tx      = new Transaction(bt.xdr, this.passphrase);
+          const signed  = await this._signTx(tx);
+          const { hash: txHash, returnValue } = await this._sendAndPoll(server, signed);
+          if (!returnValue) {
+            throw new Error(`Transaction ${txHash} succeeded but returned no value`);
+          }
+          const streamId      = scValToU64(returnValue);
+          const streamAddress = await this._factory.streamAddress(streamId) ?? '';
+          return { streamId, streamAddress, txHash };
+        }),
+      );
+
+      settled.forEach((result, i) => {
+        const originalIndex = validEntries[i]!.index;
+        if (result.status === 'fulfilled') {
+          results.set(originalIndex, {
+            index: originalIndex,
+            success: true,
+            streamId: result.value.streamId,
+            streamAddress: result.value.streamAddress,
+            txHash: result.value.txHash,
+          });
+        } else {
+          const err = result.reason;
+          results.set(originalIndex, {
+            index: originalIndex,
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      });
+    }
+
+    return configs.map((_, i) => results.get(i)!);
   }
 
   /** Cancel the stream (sender only). Settles all balances atomically. */
@@ -886,7 +1068,16 @@ function parseStreamInfo(id: bigint, address: string, val: xdr.ScVal): StreamInf
   // (see contracts/stream/src/storage.rs). Reading `m['paused']` etc. always
   // yields `undefined`; derive the booleans by masking `flags`, mirroring
   // `StreamInfo::is_paused()` / `is_cancelled()` / `is_clawback_enabled()`.
-  const flags = m['flags'] ? scValToU32(m['flags']) : 0;
+  // Defensive: if `flags` is present but not a U32 ScVal (wrong type from a
+  // contract upgrade or malformed data), fall back to 0 instead of throwing.
+  let flags = 0;
+  if (m['flags']) {
+    try {
+      flags = scValToU32(m['flags']);
+    } catch {
+      flags = 0;
+    }
+  }
 
   const info: StreamInfo = {
     id,
